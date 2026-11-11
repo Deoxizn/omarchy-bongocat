@@ -1,114 +1,91 @@
 #!/usr/bin/env python3
+"""Key monitor for the Bongo Cat bar widget, Noctalia-style.
+
+Runs `evtest` on every keyboard device and prints one blank line per
+keypress. evtest prints one human-readable line per input event, so unlike
+a raw evdev reader this is trivially debuggable: run
+`evtest /dev/input/event7`, type, and watch the lines.
+
+Same deal as before: keyboard devices only, found via the udev -kbd
+symlinks. Requires `evtest` and read access to the keyboard devices
+(user in the `input` group, or a fresh login after setup/install.sh).
+"""
 import glob
-import fcntl
 import os
 import select
-import struct
+import shutil
+import subprocess
 import sys
-import time
-
-EVENT_FORMAT = "llHHI"
-EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
-EV_KEY = 1
-EV_REL = 2
-EV_ABS = 3
-
-_IOC_NRBITS = 8
-_IOC_TYPEBITS = 8
-_IOC_SIZEBITS = 14
-_IOC_DIRBITS = 2
-_IOC_NRSHIFT = 0
-_IOC_TYPESHIFT = 8
-_IOC_SIZESHIFT = 16
-_IOC_DIRSHIFT = 30
-_IOC_READ = 2
 
 
-def _ioc(direction, type_, nr, size):
-    return (
-        (direction << _IOC_DIRSHIFT)
-        | (type_ << _IOC_TYPESHIFT)
-        | (nr << _IOC_NRSHIFT)
-        | (size << _IOC_SIZESHIFT)
-    )
+def evtest_cmd(device):
+    # evtest block-buffers when its stdout is a pipe, which would deliver
+    # keypresses in bursts. stdbuf forces line buffering so every event
+    # arrives as it happens.
+    if shutil.which("stdbuf") is not None:
+        return ["stdbuf", "-oL", "evtest", device]
+    return ["evtest", device]
 
 
-# EVIOCGBIT(ev, len): fetch the capability bitmask for an event type `ev`.
-def _eviocgbit(ev, size):
-    return _ioc(_IOC_READ, ord("E"), 0x20 + ev, size)
-
-
-long_size = struct.calcsize("L")
-KEY_CAP = _eviocgbit(EV_KEY, long_size)
-REL_CAP = _eviocgbit(EV_REL, long_size)
-ABS_CAP = _eviocgbit(EV_ABS, long_size)
-
-
-def _capability_bits(fd, request):
-    mask = fcntl.ioctl(fd, request, b"\0" * long_size)
-    return struct.unpack("=Q", mask.ljust(8, b"\0"))[0]
-
-
-def is_keyboard(fd):
-    # A keyboard reports key events but, unlike mice/touchpads/touchscreens,
-    # has no relative or absolute pointer axes.
-    try:
-        if not _capability_bits(fd, KEY_CAP):
-            return False
-        if _capability_bits(fd, REL_CAP) or _capability_bits(fd, ABS_CAP):
-            return False
-    except OSError:
+def is_key_hit(line):
+    # evtest prints one line per event, e.g.:
+    #   Event: time 1700.0, type 1 (EV_KEY), code 57 (KEY_SPACE), value 1
+    # value 1 = press, value 2 = repeat (held key). value 0 = release.
+    if "EV_KEY" not in line or "BTN_TOOL_" in line:
         return False
-    return True
+    return "value 1" in line or "value 2" in line
 
 
-# Keyboard-only candidates: udev maintains these symlinks, so we never open
-# mice, touchpads, or other input devices.
-devices = []
-for pattern in ("/dev/input/by-path/*-kbd", "/dev/input/by-id/*-kbd"):
-    for path in glob.glob(pattern):
-        real = os.path.realpath(path)
-        if real not in devices:
-            devices.append(real)
+def main():
+    if shutil.which("evtest") is None:
+        print("key_monitor: evtest not found (sudo pacman -S evtest)",
+              file=sys.stderr)
+        return 1
 
-streams = []
-for path in devices:
-    try:
-        fd = open(path, "rb", buffering=0)
-    except OSError:
-        continue
-    if is_keyboard(fd):
-        streams.append(fd)
-    else:
-        fd.close()
+    devices = []
+    for pattern in ("/dev/input/by-path/*-kbd", "/dev/input/by-id/*-kbd"):
+        for path in glob.glob(pattern):
+            real = os.path.realpath(path)
+            if real not in devices:
+                devices.append(real)
+    if not devices:
+        print("key_monitor: no keyboard devices found", file=sys.stderr)
+        return 1
 
-if not streams:
-    sys.exit(0)
-
-# Coalesce bursts: at most one event per MIN_INTERVAL seconds bounds the
-# stdout byte rate even under fast typists, key auto-repeat, or pasted text.
-MIN_INTERVAL = 0.02
-last_emit = 0.0
-
-while True:
-    try:
-        readable, _, _ = select.select(streams, [], [], 0.1)
-    except (OSError, ValueError):
-        sys.exit(0)
-    for fd in readable:
+    procs = []
+    for dev in devices:
         try:
-            data = fd.read(EVENT_SIZE)
+            p = subprocess.Popen(evtest_cmd(dev), stdout=subprocess.PIPE,
+                                 text=True)
+        except OSError as e:
+            print(f"key_monitor: cannot start evtest on {dev}: {e}",
+                  file=sys.stderr)
+            continue
+        procs.append((dev, p))
+    if not procs:
+        print("key_monitor: could not start evtest on any keyboard",
+              file=sys.stderr)
+        return 1
+
+    print("key_monitor: reading " + ", ".join(d for d, _ in procs),
+          file=sys.stderr)
+
+    streams = {p.stdout: p for _, p in procs}
+    while streams:
+        try:
+            readable, _, _ = select.select(list(streams), [], [], 0.5)
         except (OSError, ValueError):
-            streams.remove(fd)
-            if not streams:
-                sys.exit(0)
-            continue
-        if not data or len(data) < EVENT_SIZE:
-            continue
-        _, _, etype, code, value = struct.unpack(EVENT_FORMAT, data[:EVENT_SIZE])
-        if etype == EV_KEY and value == 1:
-            now = time.monotonic()
-            if now - last_emit >= MIN_INTERVAL:
-                last_emit = now
+            return 0
+        for stream in readable:
+            line = stream.readline()
+            if not line:
+                streams.pop(stream, None)
+                continue
+            if is_key_hit(line):
                 sys.stdout.write("\n")
                 sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

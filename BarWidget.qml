@@ -122,7 +122,7 @@ BarWidget {
   property int watcherRestarts: 0
   Process {
     id: keyWatcher
-    command: [root.monitorScript]
+    command: ["python3", root.monitorScript]
     // SplitParser emits one onRead per delimited chunk and discards the data
     // afterwards, so the shell-side buffer stays bounded (StdioCollector, by
     // contrast, grows without limit for a long-lived process).

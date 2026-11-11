@@ -42,11 +42,10 @@ omarchy plugin enable deoxizn.bongocat
 ### Requirements
 
 - **Omarchy** (and its Quickshell-based shell)
-- **PipeWire with pipewire-pulse** for the music detection: `audio_monitor.py`
-  reads the default sink's monitor source with `parec`, which ships with
-  PipeWire. No extra setup, no extra packages, and no input-group access
-  needed for the audio side. If `parec` is missing the cat still drums on
-  keypresses and logs a warning.
+- **`evtest` and `cava`** for the two watchers: `sudo pacman -S evtest cava`.
+  `evtest` reads the keyboard, `cava` supplies the audio spectrum for beat
+  detection. If either is missing, that watcher logs a warning and the other
+  side keeps working.
 - **Read access to keyboard input devices.** The monitor opens only keyboard
   devices (`/dev/input/by-path/*-kbd` and `/dev/input/by-id/*-kbd`, filtered by
   device capabilities) — it never reads mice, touchpads, or other inputs. Those
@@ -92,8 +91,9 @@ folder.
 deoxizn.bongocat/
 ├── manifest.json       # Omarchy manifest (must live in the repo root)
 ├── BarWidget.qml       # Widget entry point (canvas rendering + logic)
-├── key_monitor.py      # Reads keypresses from /dev/input
-├── audio_monitor.py    # Reads music beats from the PipeWire monitor source
+├── key_monitor.py      # Reads keypresses via evtest
+├── audio_monitor.py    # Reads music beats from the cava spectrum
+├── cava.conf           # cava config: 16 mono bars as ascii on stdout
 ├── bongocat.ttf        # Bundled icon font (converted from pixl-garden)
 ├── assets/bongocat.gif # Demo GIF for this README
 ├── setup/
@@ -111,12 +111,12 @@ allowed. This flat layout follows the convention of the built-in bar widgets.
 
 ## How it works
 
-1. `key_monitor.py` opens keyboard input devices only and prints one line to
-   stdout per pressed key (`EV_KEY` event with value 1), coalescing bursts to
-   a bounded rate.
-2. `audio_monitor.py` reads the default PipeWire sink's monitor source with
-   `parec` and prints one line per detected beat (see
-   [Music detection](#music-detection)).
+1. `key_monitor.py` runs `evtest` on each keyboard input device and prints
+   one line to stdout per pressed key (`EV_KEY` with value 1, or value 2 for
+   a held-key repeat). evtest prints one human-readable line per event, so
+   debugging is just `evtest /dev/input/event7` and typing.
+2. `audio_monitor.py` runs `cava -p cava.conf` and prints one line per
+   detected beat (see [Music detection](#music-detection)).
 3. `BarWidget.qml` runs both scripts as `Process`es, reading stdout through a
    `SplitParser` (one `onRead` per line, immediately discarded). Each line
    calls `drum()`, which switches between "left paw down" and "right paw down" —
@@ -128,28 +128,38 @@ allowed. This flat layout follows the convention of the built-in bar widgets.
 
 ## Music detection
 
-`audio_monitor.py` taps the default sink's monitor source, the same audio
-you hear, with `parec --raw` (mono 16-bit PCM at 22050 Hz) and runs a small
-beat detector over it, all in the standard library:
+`audio_monitor.py` runs `cava -p cava.conf`, which prints 16 mono spectrum
+bars (low to high) as one ascii line per frame, and runs Noctalia's beat
+detector over them, ported from the
+[Noctalia bongocat plugin](https://github.com/noctalia-dev/official-plugins/tree/main/bongocat):
 
-- The PCM runs through a one-pole low-pass (~200 Hz corner), so the
-  measurement follows kick and bass instead of the whole mix. A broadband
-  detector goes deaf on heavily compressed music, the loudness catches up
-  with its own average and nothing stands out anymore.
-- Each ~46 ms chunk of that bass signal gets an RMS energy value.
-- A beat is a chunk louder than the rolling mean of the last ~3 s times
-  1.3, with an absolute floor so silence and hiss never trigger.
-- A 120 ms refractory period keeps one hit from firing twice.
+- bass = average of the first 8 bars, mid = average of bars 9-16.
+- intensity = bass * 0.8 + mid * 0.6, smoothed with alpha 0.75.
+- A beat is a rising smoothed intensity past the threshold, with a
+  100 ms cooldown so one hit can't fire twice.
 
-It is tuned for kick-heavy music, which is where the cat looks best. If a
-sink disappears mid-song (Bluetooth drop, server restart) the script waits
-two seconds and re-discovers the monitor instead of dying, so the cat picks
-the beat back up on its own. If `parec` itself is missing it exits and the
-widget logs the warning, keys keep working.
+cava does the FFT, so the bass is cleanly separated from the rest of the
+mix. That is the whole difference from the earlier parec approach, which
+measured broadband energy and went deaf on loud, compressed music. The
+detector is deliberately trigger-happy, the same as Noctalia's: during a
+loud passage the cat drums at the cooldown rate, which is the insane-cat
+look. Silence stays silent.
 
-Tuning knobs live at the top of `audio_monitor.py`: `THRESHOLD_FACTOR`
-(lower drums more easily), `FLOOR` (higher ignores quiet passages),
-`REFRACTORY` (lower allows faster drumming).
+If a sink disappears mid-song the script waits and cava keeps running, so
+the cat picks the beat back up on its own. If `cava` itself is missing it
+exits and the widget logs the warning, keys keep working.
+
+Tuning knobs live at the top of `audio_monitor.py`: `BEAT_THRESHOLD`
+(lower drums more easily), `BEAT_DELTA_THRESHOLD` (lower catches smaller
+onsets), `COOLDOWN` (lower allows faster drumming). The cava side is in
+`cava.conf`: `bars`, `noise_reduction`, and the input `method` (PipeWire
+monitor of the default sink; switch to `pulse` if your cava build lacks
+PipeWire support).
+
+Troubleshooting: `cava -p ~/.config/omarchy/plugins/deoxizn.bongocat/cava.conf`
+in a terminal shows the raw spectrum lines. If those stay flat while music
+plays, cava isn't hearing your sink. `evtest /dev/input/event7` and typing
+shows whether your keyboard produces events at all.
 
 ## Credits
 

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "deoxizn.bongocat",
   "name": "BongoCat",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "author": "samuel",
   "description": "A bongo cat that drums with its paws on each keypress, and on the beat when music is playing",
   "kinds": ["bar-widget"],
