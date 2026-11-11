@@ -54,8 +54,11 @@ omarchy plugin enable deoxizn.bongocat
   happens on the first launch, run the one-time setup once:
 
   ```bash
-  sudo ./setup/install.sh
+  sudo ~/.config/omarchy/plugins/deoxizn.bongocat/setup/install.sh
   ```
+
+  Use the full path: the script lives inside the plugin folder, so `./setup/install.sh`
+  only works if you are already standing in it.
 
   It adds your user to the `input` group and installs a udev rule that keeps
   keyboard event devices owned by that group, then reloads and re-applies the
