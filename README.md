@@ -130,12 +130,16 @@ allowed. This flat layout follows the convention of the built-in bar widgets.
 
 `audio_monitor.py` taps the default sink's monitor source, the same audio
 you hear, with `parec --raw` (mono 16-bit PCM at 22050 Hz) and runs a small
-energy-onset detector over it, all in the standard library:
+beat detector over it, all in the standard library:
 
-- Each ~46 ms chunk gets an RMS energy value.
-- A beat is a chunk louder than the rolling mean of the last ~1.5 s times
-  1.6, with an absolute floor so silence and hiss never trigger.
-- A 150 ms refractory period keeps one hit from firing twice.
+- The PCM runs through a one-pole low-pass (~200 Hz corner), so the
+  measurement follows kick and bass instead of the whole mix. A broadband
+  detector goes deaf on heavily compressed music, the loudness catches up
+  with its own average and nothing stands out anymore.
+- Each ~46 ms chunk of that bass signal gets an RMS energy value.
+- A beat is a chunk louder than the rolling mean of the last ~3 s times
+  1.3, with an absolute floor so silence and hiss never trigger.
+- A 120 ms refractory period keeps one hit from firing twice.
 
 It is tuned for kick-heavy music, which is where the cat looks best. If a
 sink disappears mid-song (Bluetooth drop, server restart) the script waits

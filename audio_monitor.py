@@ -7,11 +7,16 @@ packages), runs a small energy-onset beat detector over the raw PCM, and
 prints one blank line per detected beat. The widget treats each line as a
 drum hit, exactly like a keypress from key_monitor.py.
 
-Detector: RMS energy per ~46 ms chunk against a rolling mean of the last
-~1.5 s. A beat is an energy spike above the rolling mean times a factor,
-with an absolute floor so silence and background hiss never trigger, and a
-short refractory period so one hit can't fire twice. Tuned for kick-heavy
-music; a quiet acoustic track still drums, just less often.
+Detector: the raw PCM runs through a one-pole low-pass (~200 Hz corner),
+so the measurement is dominated by kick and bass instead of the wall of
+guitars and synths. Each ~46 ms chunk of that bass signal gets an RMS
+energy value, compared against a rolling mean of the last ~3 s. A beat is
+an energy spike above the rolling mean times a factor, with an absolute
+floor so silence and background hiss never trigger, and a short refractory
+period so one hit can't fire twice. Tuned for kick-heavy, heavily
+compressed music, where a broadband detector goes deaf once the loudness
+catches up with its own average; a quiet acoustic track still drums, just
+less often.
 """
 import math
 import shutil
@@ -23,11 +28,11 @@ import time
 RATE = 22050
 CHUNK_SAMPLES = 1024  # ~46 ms per chunk at 22050 Hz
 CHUNK_BYTES = CHUNK_SAMPLES * 2  # s16le mono
-REFRACTORY = 0.15  # min seconds between beats
-THRESHOLD_FACTOR = 1.6  # beat when RMS > rolling mean * this
-FLOOR = 0.02  # absolute RMS floor; silence stays silent
-WINDOW = 32  # chunks of history (~1.5 s)
-RETRY_DELAY = 2.0  # seconds between parec respawn attempts
+REFRACTORY = 0.12  # min seconds between beats
+THRESHOLD_FACTOR = 1.3  # beat when bass RMS > rolling mean * this
+FLOOR = 0.015  # absolute RMS floor; silence stays silent
+WINDOW = 64  # chunks of history (~3 s)
+LP_ALPHA = 0.06  # one-pole low-pass, ~200 Hz corner at 22050 Hz
 
 
 def default_monitor():
@@ -54,12 +59,17 @@ def default_monitor():
     return None
 
 
-def rms(chunk):
+def bass_rms(chunk, state):
+    """RMS of the chunk after a one-pole low-pass. `state` holds the filter
+    memory across chunks, so the filter is continuous, not per-chunk."""
     samples = struct.unpack("<%dh" % (len(chunk) // 2), chunk)
     total = 0.0
+    lp = state[0]
     for s in samples:
-        total += s * s
-    return math.sqrt(total / len(samples)) / 32768.0
+        lp += LP_ALPHA * (s / 32768.0 - lp)
+        total += lp * lp
+    state[0] = lp
+    return math.sqrt(total / len(samples))
 
 
 def watch(monitor):
@@ -71,12 +81,13 @@ def watch(monitor):
     )
     history = []
     last_beat = 0.0
+    lp_state = [0.0]
     try:
         while True:
             chunk = proc.stdout.read(CHUNK_BYTES)
             if not chunk or len(chunk) < CHUNK_BYTES:
                 return
-            energy = rms(chunk)
+            energy = bass_rms(chunk, lp_state)
             history.append(energy)
             if len(history) > WINDOW:
                 history.pop(0)
