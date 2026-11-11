@@ -1,8 +1,12 @@
 # 🐱 Bongo Cat for Omarchy
 
 A small bongo cat that sits in your Omarchy bar and drums on the table with its
-paws whenever you type. Stop typing for a second and it goes back to its
-default pose (both paws up).
+paws whenever you type, and on the beat when music is playing. Stop typing for
+a second and it goes back to its default pose (both paws up).
+
+> Forked from [Samon97/omarchy-bongocat](https://github.com/Samon97/omarchy-bongocat)
+> by Deoxizn. This fork adds music beat detection (see below) and renames the
+> plugin id to `deoxizn.bongocat`.
 
 ![Bongo cat drumming in the bar](https://github.com/Samon97/omarchy-bongocat/raw/main/assets/bongocat.gif)
 
@@ -14,7 +18,8 @@ default pose (both paws up).
 ## What it does
 
 - Drums on every keypress, alternating paws (left down / right down).
-- Goes back to its idle pose after ~1 second without typing.
+- Drums on the beat when music is playing, alternating paws the same way.
+- Goes back to its idle pose after ~1 second without typing or beats.
 - Fits compactly in the bar — the cat's bottom line lines up with the clock's
   text.
 - Reads keypresses locally from `/dev/input/event*` (keyboard devices only —
@@ -25,18 +30,23 @@ default pose (both paws up).
 Install it as an Omarchy plugin straight from GitHub:
 
 ```bash
-omarchy plugin add https://github.com/Samon97/omarchy-bongocat.git --enable
+omarchy plugin add https://github.com/Deoxizn/omarchy-bongocat.git --enable
 ```
 
 Then enable / move it in the bar with:
 
 ```bash
-omarchy plugin enable samon97.bongocat
+omarchy plugin enable deoxizn.bongocat
 ```
 
 ### Requirements
 
 - **Omarchy** (and its Quickshell-based shell)
+- **PipeWire with pipewire-pulse** for the music detection: `audio_monitor.py`
+  reads the default sink's monitor source with `parec`, which ships with
+  PipeWire. No extra setup, no extra packages, and no input-group access
+  needed for the audio side. If `parec` is missing the cat still drums on
+  keypresses and logs a warning.
 - **Read access to keyboard input devices.** The monitor opens only keyboard
   devices (`/dev/input/by-path/*-kbd` and `/dev/input/by-id/*-kbd`, filtered by
   device capabilities) — it never reads mice, touchpads, or other inputs. Those
@@ -66,8 +76,8 @@ Remove the plugin again with:
 
 ```bash
 # Disable it in the bar, then remove the plugin folder
-omarchy plugin disable samon97.bongocat
-rm -rf ~/.config/omarchy/plugins/samon97.bongocat
+omarchy plugin disable deoxizn.bongocat
+rm -rf ~/.config/omarchy/plugins/deoxizn.bongocat
 ```
 
 That's it — the plugin doesn't write any config or state outside its own
@@ -76,10 +86,11 @@ folder.
 ## Repo layout
 
 ```
-samon97.bongocat/
+deoxizn.bongocat/
 ├── manifest.json       # Omarchy manifest (must live in the repo root)
 ├── BarWidget.qml       # Widget entry point (canvas rendering + logic)
 ├── key_monitor.py      # Reads keypresses from /dev/input
+├── audio_monitor.py    # Reads music beats from the PipeWire monitor source
 ├── bongocat.ttf        # Bundled icon font (converted from pixl-garden)
 ├── assets/bongocat.gif # Demo GIF for this README
 ├── setup/
@@ -100,14 +111,38 @@ allowed. This flat layout follows the convention of the built-in bar widgets.
 1. `key_monitor.py` opens keyboard input devices only and prints one line to
    stdout per pressed key (`EV_KEY` event with value 1), coalescing bursts to
    a bounded rate.
-2. `BarWidget.qml` runs that script as a `Process`, reading stdout through a
+2. `audio_monitor.py` reads the default PipeWire sink's monitor source with
+   `parec` and prints one line per detected beat (see
+   [Music detection](#music-detection)).
+3. `BarWidget.qml` runs both scripts as `Process`es, reading stdout through a
    `SplitParser` (one `onRead` per line, immediately discarded). Each line
    calls `drum()`, which switches between "left paw down" and "right paw down" —
    the shell-side buffer stays bounded even for a long-lived process.
-3. A `Timer` resets it to the idle pose after ~1 second.
-4. The icon glyphs are drawn on a `Canvas`. Instead of the invisible bounding
+4. A `Timer` resets it to the idle pose after ~1 second.
+5. The icon glyphs are drawn on a `Canvas`. Instead of the invisible bounding
    box, the *visible* painted outline is centered, and the cat's bottom edge is
    anchored to the bottom of the clock's text line.
+
+## Music detection
+
+`audio_monitor.py` taps the default sink's monitor source, the same audio
+you hear, with `parec --raw` (mono 16-bit PCM at 22050 Hz) and runs a small
+energy-onset detector over it, all in the standard library:
+
+- Each ~46 ms chunk gets an RMS energy value.
+- A beat is a chunk louder than the rolling mean of the last ~1.5 s times
+  1.6, with an absolute floor so silence and hiss never trigger.
+- A 150 ms refractory period keeps one hit from firing twice.
+
+It is tuned for kick-heavy music, which is where the cat looks best. If a
+sink disappears mid-song (Bluetooth drop, server restart) the script waits
+two seconds and re-discovers the monitor instead of dying, so the cat picks
+the beat back up on its own. If `parec` itself is missing it exits and the
+widget logs the warning, keys keep working.
+
+Tuning knobs live at the top of `audio_monitor.py`: `THRESHOLD_FACTOR`
+(lower drums more easily), `FLOOR` (higher ignores quiet passages),
+`REFRACTORY` (lower allows faster drumming).
 
 ## Credits
 

@@ -6,10 +6,11 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "samon97.bongocat"
+  moduleName: "deoxizn.bongocat"
 
   readonly property string home: Quickshell.env("HOME")
-  readonly property string monitorScript: home + "/.config/omarchy/plugins/samon97.bongocat/key_monitor.py"
+  readonly property string monitorScript: home + "/.config/omarchy/plugins/deoxizn.bongocat/key_monitor.py"
+  readonly property string audioScript: home + "/.config/omarchy/plugins/deoxizn.bongocat/audio_monitor.py"
 
   // The BongoCat icon font (extracted from the VS Code extension
   // pixl-garden.BongoCat). Two glyphs are drawn side by side (left half + right
@@ -149,6 +150,38 @@ BarWidget {
     onTriggered: keyWatcher.running = true
   }
 
-  // The cat only drums on keyboard input, not on click.
+  // Same deal for music: audio_monitor.py prints one line per detected
+  // beat from the default sink's monitor source, and each line is a drum
+  // hit. Keys and beats share drum(), so the paws keep alternating no
+  // matter what triggered them.
+  property int audioRestarts: 0
+  Process {
+    id: audioWatcher
+    command: ["python3", root.audioScript]
+    stdout: SplitParser {
+      splitMarker: "\n"
+      onRead: function() { root.drum() }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (String(text || "").trim() !== "") console.warn("bongocat-audio", String(text).trim())
+    }
+    running: true
+    onExited: {
+      if (exitCode !== 0 && root.audioRestarts < 3) {
+        root.audioRestarts += 1
+        restartAudio.start()
+      }
+    }
+  }
+
+  Timer {
+    id: restartAudio
+    interval: 1200
+    repeat: false
+    onTriggered: audioWatcher.running = true
+  }
+
+  // The cat drums on keyboard input and on music beats, not on click.
   Component.onCompleted: root.idle()
 }
