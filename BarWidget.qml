@@ -6,11 +6,11 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "deoxizn.bongocat"
+  moduleName: "pizza.dirty.bongocat"
 
   readonly property string home: Quickshell.env("HOME")
-  readonly property string monitorScript: home + "/.config/omarchy/plugins/deoxizn.bongocat/key_monitor.py"
-  readonly property string audioScript: home + "/.config/omarchy/plugins/deoxizn.bongocat/audio_monitor.py"
+  readonly property string monitorScript: home + "/.config/omarchy/plugins/pizza.dirty.bongocat/key_monitor.py"
+  readonly property string audioScript: home + "/.config/omarchy/plugins/pizza.dirty.bongocat/audio_monitor.py"
 
   // The BongoCat icon font (extracted from the VS Code extension
   // pixl-garden.BongoCat). Two glyphs are drawn side by side (left half + right

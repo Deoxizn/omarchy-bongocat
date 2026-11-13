@@ -6,7 +6,7 @@ a second and it goes back to its default pose (both paws up).
 
 > Forked from [Samon97/omarchy-bongocat](https://github.com/Samon97/omarchy-bongocat)
 > by Deoxizn. This fork adds music beat detection (see below) and renames the
-> plugin id to `deoxizn.bongocat`.
+> plugin id to `pizza.dirty.bongocat`.
 
 ![Bongo cat drumming in the bar](https://github.com/Samon97/omarchy-bongocat/raw/main/assets/bongocat.gif)
 
@@ -36,7 +36,7 @@ omarchy plugin add https://github.com/Deoxizn/omarchy-bongocat.git --enable
 Then enable / move it in the bar with:
 
 ```bash
-omarchy plugin enable deoxizn.bongocat
+omarchy plugin enable pizza.dirty.bongocat
 ```
 
 ### Requirements
@@ -53,7 +53,7 @@ omarchy plugin enable deoxizn.bongocat
   happens on the first launch, run the one-time setup once:
 
   ```bash
-  sudo ~/.config/omarchy/plugins/deoxizn.bongocat/setup/install.sh
+  sudo ~/.config/omarchy/plugins/pizza.dirty.bongocat/setup/install.sh
   ```
 
   Use the full path: the script lives inside the plugin folder, so `./setup/install.sh`
@@ -78,8 +78,8 @@ Remove the plugin again with:
 
 ```bash
 # Disable it in the bar, then remove the plugin folder
-omarchy plugin disable deoxizn.bongocat
-rm -rf ~/.config/omarchy/plugins/deoxizn.bongocat
+omarchy plugin disable pizza.dirty.bongocat
+rm -rf ~/.config/omarchy/plugins/pizza.dirty.bongocat
 ```
 
 That's it — the plugin doesn't write any config or state outside its own
@@ -88,7 +88,7 @@ folder.
 ## Repo layout
 
 ```
-deoxizn.bongocat/
+pizza.dirty.bongocat/
 ├── manifest.json       # Omarchy manifest (must live in the repo root)
 ├── BarWidget.qml       # Widget entry point (canvas rendering + logic)
 ├── key_monitor.py      # Reads keypresses via evtest
@@ -156,7 +156,7 @@ onsets), `COOLDOWN` (lower allows faster drumming). The cava side is in
 monitor of the default sink; switch to `pulse` if your cava build lacks
 PipeWire support).
 
-Troubleshooting: `cava -p ~/.config/omarchy/plugins/deoxizn.bongocat/cava.conf`
+Troubleshooting: `cava -p ~/.config/omarchy/plugins/pizza.dirty.bongocat/cava.conf`
 in a terminal shows the raw spectrum lines. If those stay flat while music
 plays, cava isn't hearing your sink. `evtest /dev/input/event7` and typing
 shows whether your keyboard produces events at all.

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "deoxizn.bongocat",
+  "id": "pizza.dirty.bongocat",
   "name": "BongoCat",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "samuel",
   "description": "A bongo cat that drums with its paws on each keypress, and on the beat when music is playing",
   "kinds": ["bar-widget"],
